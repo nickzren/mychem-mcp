@@ -1,5 +1,5 @@
 # tests/test_query_tools.py
-"""Tests for query tools."""
+"""Tests for enhanced query tools."""
 
 import pytest
 from mychem_mcp.tools.query import QueryApi
@@ -139,3 +139,68 @@ class TestQueryTools:
         assert len(result["top_values"]) == 3
         assert result["top_values"][0]["value"] == "Small molecule"
         assert result["top_values"][0]["percentage"] == 80.0
+    
+    @pytest.mark.asyncio
+    async def test_search_by_molecular_properties(self, mock_client):
+        """Test search by molecular properties."""
+        mock_client.get.return_value = {
+            "total": 50,
+            "took": 10,
+            "hits": []
+        }
+        
+        api = QueryApi()
+        result = await api.search_by_molecular_properties(
+            mock_client,
+            mw_max=500,
+            logp_max=5,
+            hbd_max=5,
+            hba_max=10
+        )
+        
+        assert result["success"] is True
+        
+        call_args = mock_client.get.call_args[1]["params"]["q"]
+        assert "pubchem.molecular_weight:[* TO 500]" in call_args
+        assert "pubchem.xlogp:[* TO 5]" in call_args
+        assert "pubchem.h_bond_donor_count:[* TO 5]" in call_args
+        assert "pubchem.h_bond_acceptor_count:[* TO 10]" in call_args
+    
+    @pytest.mark.asyncio
+    async def test_build_complex_query(self, mock_client):
+        """Test building complex queries."""
+        mock_client.get.return_value = {
+            "total": 10,
+            "took": 5,
+            "hits": []
+        }
+        
+        api = QueryApi()
+        criteria = [
+            {"type": "field", "field": "drugbank.groups", "value": "approved"},
+            {"type": "range", "field": "pubchem.molecular_weight", "min": 150, "max": 500},
+            {"type": "exists", "field": "chembl.max_phase"},
+            {"type": "text", "value": "inhibitor"}
+        ]
+        
+        result = await api.build_complex_query(
+            mock_client,
+            criteria=criteria,
+            logic="AND"
+        )
+        
+        assert result["success"] is True
+        
+        call_args = mock_client.get.call_args[1]["params"]["q"]
+        assert "drugbank.groups:approved" in call_args
+        assert "pubchem.molecular_weight:[150 TO 500]" in call_args
+        assert "_exists_:chembl.max_phase" in call_args
+        assert "inhibitor" in call_args
+    
+    @pytest.mark.asyncio
+    async def test_search_by_molecular_properties_error(self, mock_client):
+        """Test error when no molecular property filters specified."""
+        api = QueryApi()
+        
+        with pytest.raises(ValueError, match="At least one molecular property"):
+            await api.search_by_molecular_properties(mock_client)

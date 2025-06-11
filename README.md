@@ -5,14 +5,17 @@ A Model Context Protocol (MCP) server that provides access to the [MyChemInfo AP
 ## Features
 
 ### Core Capabilities
-- **Chemical Search**: Search chemicals by name, formula, InChI, SMILES, or other identifiers
+- **Chemical Search**: Search by name, formula, InChI, SMILES, CAS, or molecular properties (MW, LogP, HBD/HBA)
 - **Drug Information**: Access data from DrugBank, ChEMBL, PubChem, and PharmGKB
-- **Structure Operations**: Convert between formats, search by structure similarity
+- **Structure Operations**: Convert between formats, search by structure, calculate properties
+- **Identifier Mapping**: Convert between PubChem CID, ChEMBL ID, DrugBank ID, and 6 other ID types
 - **Batch Processing**: Query up to 1000 chemicals in a single request
+- **Bioactivity Data**: Search compounds by target activity, compare bioassays across molecules
 - **ADMET Properties**: Retrieve absorption, distribution, metabolism, excretion, and toxicity data
-- **Clinical Data**: Access clinical trials and FDA approval information
-- **Patent Information**: Search patent data for chemicals
-- **Data Export**: Export results in TSV, CSV, JSON, or SDF formats
+- **Clinical Data**: Access clinical trials, FDA approval status, and regulatory information
+- **Biological Context**: Explore pathways, disease associations, and mechanisms of action
+- **Patent Information**: Search patent data and intellectual property landscape
+- **Data Export**: Export results in TSV, CSV, JSON, SDF, or Markdown formats
 
 ### Data Sources
 - **PubChem**: Chemical structures, properties, bioassays

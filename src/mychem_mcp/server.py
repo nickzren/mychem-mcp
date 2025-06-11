@@ -1,9 +1,9 @@
 # src/mychem_mcp/server.py
-"""MyChem MCP Server implementation."""
+"""Enhanced MyChem MCP Server implementation."""
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import logging
 
 from mcp.server import Server
@@ -21,7 +21,10 @@ from .tools import (
     PATENT_TOOLS, PatentApi,
     CLINICAL_TOOLS, ClinicalApi,
     METADATA_TOOLS, MetadataApi,
-    EXPORT_TOOLS, ExportApi
+    EXPORT_TOOLS, ExportApi,
+    MAPPING_TOOLS, MappingApi,
+    BIOACTIVITY_TOOLS, BioactivityApi,
+    BIOLOGICAL_CONTEXT_TOOLS, BiologicalContextApi
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +41,10 @@ ALL_TOOLS = (
     PATENT_TOOLS +
     CLINICAL_TOOLS +
     METADATA_TOOLS +
-    EXPORT_TOOLS
+    EXPORT_TOOLS +
+    MAPPING_TOOLS +
+    BIOACTIVITY_TOOLS +
+    BIOLOGICAL_CONTEXT_TOOLS
 )
 
 # Create API class mapping
@@ -47,6 +53,8 @@ API_CLASS_MAP = {
     "search_chemical": QueryApi,
     "search_by_field": QueryApi,
     "get_field_statistics": QueryApi,
+    "search_by_molecular_properties": QueryApi,
+    "build_complex_query": QueryApi,
     # Annotation tools
     "get_chemical_by_id": AnnotationApi,
     # Batch tools
@@ -56,6 +64,10 @@ API_CLASS_MAP = {
     "get_chemical_structure": StructureApi,
     "search_by_structure": StructureApi,
     "convert_structure": StructureApi,
+    "search_by_substructure": StructureApi,
+    "get_structure_properties": StructureApi,
+    "calculate_similarity_matrix": StructureApi,
+    "get_stereoisomers": StructureApi,
     # Drug tools
     "search_drug": DrugApi,
     "get_drug_interactions": DrugApi,
@@ -75,20 +87,46 @@ API_CLASS_MAP = {
     "get_database_statistics": MetadataApi,
     # Export tools
     "export_chemical_list": ExportApi,
+    "export_filtered_dataset": ExportApi,
+    "export_compound_comparison": ExportApi,
+    "export_activity_profile": ExportApi,
+    # Mapping tools
+    "map_identifiers": MappingApi,
+    "validate_identifiers": MappingApi,
+    "find_common_identifiers": MappingApi,
+    # Bioactivity tools
+    "get_bioassay_data": BioactivityApi,
+    "search_active_compounds": BioactivityApi,
+    "compare_compound_activities": BioactivityApi,
+    # Biological context tools
+    "get_pathway_associations": BiologicalContextApi,
+    "get_disease_associations": BiologicalContextApi,
+    "search_by_indication": BiologicalContextApi,
+    "get_mechanism_of_action": BiologicalContextApi,
+    "find_drugs_by_target_class": BiologicalContextApi,
 }
 
 
 class MyChemMcpServer:
-    """MCP Server for MyChemInfo data."""
+    """Enhanced MCP Server for MyChemInfo data."""
     
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.server_name = "mychem-mcp"
-        self.server_version = "0.2.0"
+        self.server_version = "0.3.0"
+        self.config = config or {}
         self.mcp_server = Server(self.server_name, self.server_version)
-        self.client = MyChemClient()
+        
+        # Initialize client with configuration
+        self.client = MyChemClient(
+            timeout=self.config.get("timeout", 30.0),
+            cache_enabled=self.config.get("cache_enabled", True),
+            cache_ttl=self.config.get("cache_ttl", 3600),
+            rate_limit=self.config.get("rate_limit", 10)
+        )
+        
         self._api_instances: Dict[type, Any] = {}
         self._setup_handlers()
-        logger.info(f"{self.server_name} v{self.server_version} initialized.")
+        logger.info(f"{self.server_name} v{self.server_version} initialized with enhanced features.")
     
     def _setup_handlers(self):
         """Register MCP handlers."""
@@ -96,6 +134,7 @@ class MyChemMcpServer:
         @self.mcp_server.list_tools()
         async def handle_list_tools() -> list[types.Tool]:
             """Returns the list of all available tools."""
+            logger.info(f"Listing {len(ALL_TOOLS)} available tools")
             return ALL_TOOLS
         
         @self.mcp_server.call_tool()
@@ -103,7 +142,7 @@ class MyChemMcpServer:
             name: str, arguments: Dict[str, Any]
         ) -> list[types.TextContent]:
             """Handles a tool call request."""
-            logger.info(f"Handling call for tool: '{name}'")
+            logger.info(f"Handling call for tool: '{name}' with args: {list(arguments.keys())}")
             
             try:
                 if name not in API_CLASS_MAP:
@@ -141,6 +180,8 @@ class MyChemMcpServer:
     async def run(self):
         """Starts the MCP server."""
         logger.info(f"Starting {self.server_name} v{self.server_version}...")
+        logger.info(f"Configuration: cache_enabled={self.config.get('cache_enabled', True)}, "
+                   f"rate_limit={self.config.get('rate_limit', 10)}/s")
         
         async with stdio_server() as (read_stream, write_stream):
             await self.mcp_server.run(
@@ -151,8 +192,18 @@ class MyChemMcpServer:
 
 
 def main():
-    """Main entry point."""
-    server = MyChemMcpServer()
+    """Main entry point with optional configuration."""
+    import os
+    
+    # Load configuration from environment variables
+    config = {
+        "cache_enabled": os.environ.get("MYCHEM_CACHE_ENABLED", "true").lower() == "true",
+        "cache_ttl": int(os.environ.get("MYCHEM_CACHE_TTL", "3600")),
+        "rate_limit": int(os.environ.get("MYCHEM_RATE_LIMIT", "10")),
+        "timeout": float(os.environ.get("MYCHEM_TIMEOUT", "30.0"))
+    }
+    
+    server = MyChemMcpServer(config)
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt:

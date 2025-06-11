@@ -5,11 +5,12 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 import sys
 import os
+from datetime import datetime, timedelta
 
 # Add the src directory to Python path for testing
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from mychem_mcp.client import MyChemClient
+from mychem_mcp.client import MyChemClient, CacheEntry
 
 
 @pytest.fixture
@@ -19,6 +20,12 @@ def mock_client():
     client.get = AsyncMock()
     client.post = AsyncMock()
     return client
+
+
+@pytest.fixture
+def real_client():
+    """Create a real client instance for testing caching."""
+    return MyChemClient(cache_enabled=True, cache_ttl=60)
 
 
 @pytest.fixture
@@ -287,5 +294,128 @@ def sample_fields_metadata():
         "chembl.max_phase": {
             "type": "integer",
             "description": "Maximum phase of drug development"
+        }
+    }
+
+
+@pytest.fixture
+def sample_mapping_results():
+    """Sample identifier mapping results."""
+    return [
+        {
+            "_id": "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+            "found": True,
+            "query": "aspirin",
+            "pubchem": {"cid": 2244},
+            "chembl": {"molecule_chembl_id": "CHEMBL25"},
+            "drugbank": {"id": "DB00945"}
+        }
+    ]
+
+
+@pytest.fixture
+def sample_bioactivity_data():
+    """Sample bioactivity data."""
+    return {
+        "chembl": {
+            "activities": [
+                {
+                    "assay_chembl_id": "CHEMBL123456",
+                    "target_pref_name": "Cyclooxygenase-2",
+                    "target_type": "SINGLE PROTEIN",
+                    "standard_type": "IC50",
+                    "standard_value": "50",
+                    "standard_units": "nM",
+                    "standard_relation": "=",
+                    "activity_comment": "Active"
+                }
+            ]
+        },
+        "pubchem": {
+            "bioassays": [
+                {
+                    "aid": 504466,
+                    "name": "COX-2 Inhibition Assay",
+                    "activity_outcome": "Active",
+                    "assay_type": "Confirmatory"
+                }
+            ]
+        }
+    }
+
+
+@pytest.fixture
+def sample_pathway_data():
+    """Sample pathway association data."""
+    return {
+        "pharmgkb": {
+            "pathways": [
+                {
+                    "id": "PA165111376",
+                    "name": "Aspirin Pathway, Pharmacodynamics"
+                }
+            ]
+        },
+        "drugbank": {
+            "pathways": [
+                {
+                    "name": "Arachidonic Acid Metabolism",
+                    "category": "Metabolic"
+                }
+            ],
+            "enzymes": [
+                {
+                    "name": "Prostaglandin G/H synthase 1",
+                    "gene_name": "PTGS1",
+                    "actions": ["inhibitor"]
+                }
+            ]
+        }
+    }
+
+
+@pytest.fixture
+def sample_disease_data():
+    """Sample disease association data."""
+    return {
+        "drugbank": {
+            "indication": "For the temporary relief of minor aches and pains.",
+            "categories": ["Analgesics", "Anti-Inflammatory Agents"]
+        },
+        "chembl": {
+            "indication_class": ["Analgesic", "Antipyretic", "Anti-inflammatory"]
+        },
+        "pharmgkb": {
+            "diseases": [
+                {
+                    "id": "PA443440",
+                    "name": "Pain"
+                }
+            ]
+        }
+    }
+
+
+@pytest.fixture
+def sample_structure_properties():
+    """Sample structure properties data."""
+    return {
+        "pubchem": {
+            "molecular_formula": "C9H8O4",
+            "molecular_weight": 180.16,
+            "xlogp": 1.2,
+            "tpsa": 63.6,
+            "complexity": 212,
+            "h_bond_acceptor_count": 4,
+            "h_bond_donor_count": 1,
+            "rotatable_bond_count": 3,
+            "heavy_atom_count": 13,
+            "atom_stereo_count": 0
+        },
+        "chembl": {
+            "ro3_pass": "Y",
+            "num_ro5_violations": 0,
+            "qed_weighted": 0.55,
+            "aromatic_rings": 1
         }
     }

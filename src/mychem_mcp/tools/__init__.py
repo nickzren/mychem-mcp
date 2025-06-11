@@ -11,6 +11,9 @@ from .patent import PATENT_TOOLS, PatentApi
 from .clinical import CLINICAL_TOOLS, ClinicalApi
 from .metadata import METADATA_TOOLS, MetadataApi
 from .export import EXPORT_TOOLS, ExportApi
+from .mapping import MAPPING_TOOLS, MappingApi
+from .bioactivity import BIOACTIVITY_TOOLS, BioactivityApi
+from .biological_context import BIOLOGICAL_CONTEXT_TOOLS, BiologicalContextApi
 
 __all__ = [
     "QUERY_TOOLS", "QueryApi",
@@ -23,4 +26,7 @@ __all__ = [
     "CLINICAL_TOOLS", "ClinicalApi",
     "METADATA_TOOLS", "MetadataApi",
     "EXPORT_TOOLS", "ExportApi",
+    "MAPPING_TOOLS", "MappingApi",
+    "BIOACTIVITY_TOOLS", "BioactivityApi",
+    "BIOLOGICAL_CONTEXT_TOOLS", "BiologicalContextApi",
 ]
