@@ -35,7 +35,6 @@ A Model Context Protocol (MCP) server that provides access to the [MyChemInfo AP
 
 2. **Setup**
    ```bash
-   git clone https://github.com/nickzren/mychem-mcp.git
    cd mychem-mcp
    uv venv
    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
