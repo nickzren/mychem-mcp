@@ -26,25 +26,38 @@ A Model Context Protocol (MCP) server that provides access to the [MyChemInfo AP
 - **Patent databases**: Chemical patent information
 - **Clinical trials**: Drug development pipeline data
 
-## Installation
+## Quick Start
 
-```bash
-git clone https://github.com/nickzren/mychem-mcp
-cd mychem-mcp
-mamba env create -f environment.yml
-mamba activate mychem-mcp
-```
+1. **Install UV**
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Setup**
+   ```bash
+   git clone https://github.com/nickzren/mychem-mcp.git
+   cd mychem-mcp
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   uv pip install -e .
+   ```
+
+3. **Configure Claude Desktop**
+   ```bash
+   python scripts/configure_claude.py
+   ```
+   Then restart Claude Desktop.
 
 ## Usage
 
-#### As an MCP Server
+#### Running the Server
 
 ```bash
 mychem-mcp
 ```
 
-#### Configure with Claude Desktop
+#### Development
 
 ```bash
-python scripts/configure_claude.py
+pytest tests/ -v
 ```

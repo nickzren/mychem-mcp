@@ -45,40 +45,45 @@ def find_python_executable():
     # First try to get Python from current environment
     python_path = sys.executable
     
-    # Verify it's in a conda environment
-    if "envs" in python_path and "mychem-mcp" in python_path:
-        return python_path
+    # Check if we're in a virtual environment
+    if hasattr(sys, 'prefix') and hasattr(sys, 'base_prefix'):
+        if sys.prefix != sys.base_prefix:
+            # We're in a virtual environment
+            return python_path
     
-    # Try to find conda and get the environment path
-    try:
-        # Get conda info
-        result = subprocess.run(
-            ["conda", "info", "--envs"], 
-            capture_output=True, 
-            text=True, 
-            check=True
-        )
+    # Check for .venv in the project directory (uv default)
+    venv_path = os.path.join(PROJECT_DIR, ".venv")
+    if os.path.exists(venv_path):
+        python_exe = "python.exe" if platform.system() == "Windows" else "python"
+        if platform.system() == "Windows":
+            python_path = os.path.join(venv_path, "Scripts", python_exe)
+        else:
+            python_path = os.path.join(venv_path, "bin", python_exe)
         
-        # Parse output to find mychem-mcp environment
-        for line in result.stdout.split('\n'):
-            if 'mychem-mcp' in line and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    env_path = parts[-1]  # Last element is the path
-                    python_exe = "python.exe" if platform.system() == "Windows" else "python"
-                    python_path = os.path.join(env_path, "bin", python_exe)
-                    if platform.system() == "Windows":
-                        python_path = os.path.join(env_path, python_exe)
-                    
-                    if os.path.exists(python_path):
-                        return python_path
+        if os.path.exists(python_path):
+            return python_path
+    
+    # Try to run uv to find the Python path
+    try:
+        result = subprocess.run(
+            ["uv", "run", "which", "python"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=PROJECT_DIR
+        )
+        python_path = result.stdout.strip()
+        if python_path and os.path.exists(python_path):
+            return python_path
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     
-    print("Error: Could not find Python in mychem-mcp conda environment.", file=sys.stderr)
-    print("Please activate the mychem-mcp environment and run this script again:", file=sys.stderr)
-    print("  conda activate mychem-mcp", file=sys.stderr)
-    print("  python scripts/configure_claude.py", file=sys.stderr)
+    print("Error: Could not find Python in uv virtual environment.", file=sys.stderr)
+    print("Please ensure you have created a virtual environment and installed the package:", file=sys.stderr)
+    print("  cd", PROJECT_DIR, file=sys.stderr)
+    print("  uv venv", file=sys.stderr)
+    print("  uv pip install -e .", file=sys.stderr)
+    print("  uv run python scripts/configure_claude.py", file=sys.stderr)
     return None
 
 
@@ -128,8 +133,9 @@ def main():
     # 2. Test the server
     if not test_server():
         print("\nError: Server test failed. Please ensure all dependencies are installed:", file=sys.stderr)
-        print("  conda activate mychem-mcp", file=sys.stderr)
-        print("  pip install -e .", file=sys.stderr)
+        print("  cd", PROJECT_DIR, file=sys.stderr)
+        print("  uv venv", file=sys.stderr)
+        print("  uv pip install -e .", file=sys.stderr)
         sys.exit(1)
     
     # 3. Find the path to the Claude config file
