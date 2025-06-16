@@ -1,15 +1,7 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "mychem-mcp"
-version = "0.3.0"
-description = "MCP server providing comprehensive access to MyChemInfo API for chemical and drug information"
-readme = "README.md"
+version = "0.1.0"
 requires-python = ">=3.12"
-license = {text = "MIT"}
-authors = [{name = "Zhong Ren", email = "zhong.ren@hotmail.com"}]
 dependencies = [
     "mcp",
     "httpx",
@@ -18,11 +10,12 @@ dependencies = [
     "pytest-asyncio",
 ]
 
-[project.scripts]
-mychem-mcp = "mychem_mcp.server:main"
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/mychem_mcp"]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
