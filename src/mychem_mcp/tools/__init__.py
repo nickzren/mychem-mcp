@@ -1,32 +1,57 @@
-# src/mychem_mcp/tools/__init__.py
-"""MyChem MCP tools."""
+"""Public API surfaces for MyChem MCP tool classes.
 
-from .query import QUERY_TOOLS, QueryApi
-from .annotation import ANNOTATION_TOOLS, AnnotationApi
-from .batch import BATCH_TOOLS, BatchApi
-from .structure import STRUCTURE_TOOLS, StructureApi
-from .drug import DRUG_TOOLS, DrugApi
-from .admet import ADMET_TOOLS, ADMETApi
-from .patent import PATENT_TOOLS, PatentApi
-from .clinical import CLINICAL_TOOLS, ClinicalApi
-from .metadata import METADATA_TOOLS, MetadataApi
-from .export import EXPORT_TOOLS, ExportApi
-from .mapping import MAPPING_TOOLS, MappingApi
-from .bioactivity import BIOACTIVITY_TOOLS, BioactivityApi
-from .biological_context import BIOLOGICAL_CONTEXT_TOOLS, BiologicalContextApi
+`ALL_TOOLS` and `API_CLASS_MAP` were removed in v0.3.0. FastMCP now handles tool
+registration and dispatching directly in `mychem_mcp.server`.
+"""
+
+from .admet import ADMETApi
+from .annotation import AnnotationApi
+from .batch import BatchApi
+from .bioactivity import BioactivityApi
+from .biological_context import BiologicalContextApi
+from .clinical import ClinicalApi
+from .drug import DrugApi
+from .export import ExportApi
+from .mapping import MappingApi
+from .metadata import MetadataApi
+from .patent import PatentApi
+from .query import QueryApi
+from .structure import StructureApi
 
 __all__ = [
-    "QUERY_TOOLS", "QueryApi",
-    "ANNOTATION_TOOLS", "AnnotationApi",
-    "BATCH_TOOLS", "BatchApi",
-    "STRUCTURE_TOOLS", "StructureApi",
-    "DRUG_TOOLS", "DrugApi",
-    "ADMET_TOOLS", "ADMETApi",
-    "PATENT_TOOLS", "PatentApi",
-    "CLINICAL_TOOLS", "ClinicalApi",
-    "METADATA_TOOLS", "MetadataApi",
-    "EXPORT_TOOLS", "ExportApi",
-    "MAPPING_TOOLS", "MappingApi",
-    "BIOACTIVITY_TOOLS", "BioactivityApi",
-    "BIOLOGICAL_CONTEXT_TOOLS", "BiologicalContextApi",
+    "ADMETApi",
+    "AnnotationApi",
+    "BatchApi",
+    "BioactivityApi",
+    "BiologicalContextApi",
+    "ClinicalApi",
+    "DrugApi",
+    "ExportApi",
+    "MappingApi",
+    "MetadataApi",
+    "PatentApi",
+    "QueryApi",
+    "StructureApi",
 ]
+
+
+def __getattr__(name: str):
+    if name == "ALL_TOOLS":
+        import warnings
+
+        warnings.warn(
+            "ALL_TOOLS is deprecated in v0.3.0. Tools are now managed by FastMCP.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return []
+    if name == "API_CLASS_MAP":
+        import warnings
+
+        warnings.warn(
+            "API_CLASS_MAP is deprecated in v0.3.0. FastMCP handles tool dispatch.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return {}
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

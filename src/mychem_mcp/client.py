@@ -6,6 +6,7 @@ import hashlib
 import json
 from typing import Any, Dict, Optional
 from datetime import datetime, timedelta
+import asyncio
 
 
 class MyChemError(Exception):
@@ -145,3 +146,8 @@ class MyChemClient:
                 raise MyChemError(f"HTTP error {e.response.status_code}: {e.response.text}")
             except Exception as e:
                 raise MyChemError(f"Request failed: {str(e)}")
+
+    async def close(self) -> None:
+        """Close any persistent resources (placeholder for future enhancements)."""
+        # Async placeholder to mirror interface expected by FastMCP lifecycle.
+        return None

@@ -1,217 +1,330 @@
-# src/mychem_mcp/server.py
-"""Enhanced MyChem MCP Server implementation."""
+"""FastMCP-backed server for MyChem MCP tools."""
+from __future__ import annotations
 
-import asyncio
-import json
-from typing import Any, Dict, Optional
+import anyio
+import functools
+import inspect
 import logging
+import os
+from contextlib import asynccontextmanager
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-import mcp.types as types
+from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+import mcp.types as mcp_types
+from mcp.server.lowlevel.server import NotificationOptions
 
+from . import __version__ as package_version
 from .client import MyChemClient
 from .tools import (
-    QUERY_TOOLS, QueryApi,
-    ANNOTATION_TOOLS, AnnotationApi,
-    BATCH_TOOLS, BatchApi,
-    STRUCTURE_TOOLS, StructureApi,
-    DRUG_TOOLS, DrugApi,
-    ADMET_TOOLS, ADMETApi,
-    PATENT_TOOLS, PatentApi,
-    CLINICAL_TOOLS, ClinicalApi,
-    METADATA_TOOLS, MetadataApi,
-    EXPORT_TOOLS, ExportApi,
-    MAPPING_TOOLS, MappingApi,
-    BIOACTIVITY_TOOLS, BioactivityApi,
-    BIOLOGICAL_CONTEXT_TOOLS, BiologicalContextApi
+    ADMETApi,
+    AnnotationApi,
+    BatchApi,
+    BioactivityApi,
+    BiologicalContextApi,
+    ClinicalApi,
+    DrugApi,
+    ExportApi,
+    MappingApi,
+    MetadataApi,
+    PatentApi,
+    QueryApi,
+    StructureApi,
 )
 
-logger = logging.getLogger(__name__)
+__all__ = [
+    "mcp",
+    "get_client",
+    "main",
+]
+
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO)
-
-# Combine all tools
-ALL_TOOLS = (
-    QUERY_TOOLS +
-    ANNOTATION_TOOLS +
-    BATCH_TOOLS +
-    STRUCTURE_TOOLS +
-    DRUG_TOOLS +
-    ADMET_TOOLS +
-    PATENT_TOOLS +
-    CLINICAL_TOOLS +
-    METADATA_TOOLS +
-    EXPORT_TOOLS +
-    MAPPING_TOOLS +
-    BIOACTIVITY_TOOLS +
-    BIOLOGICAL_CONTEXT_TOOLS
-)
-
-# Create API class mapping
-API_CLASS_MAP = {
-    # Query tools
-    "search_chemical": QueryApi,
-    "search_by_field": QueryApi,
-    "get_field_statistics": QueryApi,
-    "search_by_molecular_properties": QueryApi,
-    "build_complex_query": QueryApi,
-    # Annotation tools
-    "get_chemical_by_id": AnnotationApi,
-    # Batch tools
-    "batch_query_chemicals": BatchApi,
-    "batch_get_chemicals": BatchApi,
-    # Structure tools
-    "get_chemical_structure": StructureApi,
-    "search_by_structure": StructureApi,
-    "convert_structure": StructureApi,
-    "search_by_substructure": StructureApi,
-    "get_structure_properties": StructureApi,
-    "calculate_similarity_matrix": StructureApi,
-    "get_stereoisomers": StructureApi,
-    # Drug tools
-    "search_drug": DrugApi,
-    "get_drug_interactions": DrugApi,
-    "get_drug_targets": DrugApi,
-    # ADMET tools
-    "get_admet_properties": ADMETApi,
-    "predict_toxicity": ADMETApi,
-    # Patent tools
-    "get_patent_data": PatentApi,
-    "search_patents_by_chemical": PatentApi,
-    # Clinical tools
-    "get_clinical_trials": ClinicalApi,
-    "get_fda_approval": ClinicalApi,
-    # Metadata tools
-    "get_mychem_metadata": MetadataApi,
-    "get_available_fields": MetadataApi,
-    "get_database_statistics": MetadataApi,
-    # Export tools
-    "export_chemical_list": ExportApi,
-    "export_filtered_dataset": ExportApi,
-    "export_compound_comparison": ExportApi,
-    "export_activity_profile": ExportApi,
-    # Mapping tools
-    "map_identifiers": MappingApi,
-    "validate_identifiers": MappingApi,
-    "find_common_identifiers": MappingApi,
-    # Bioactivity tools
-    "get_bioassay_data": BioactivityApi,
-    "search_active_compounds": BioactivityApi,
-    "compare_compound_activities": BioactivityApi,
-    # Biological context tools
-    "get_pathway_associations": BiologicalContextApi,
-    "get_disease_associations": BiologicalContextApi,
-    "search_by_indication": BiologicalContextApi,
-    "get_mechanism_of_action": BiologicalContextApi,
-    "find_drugs_by_target_class": BiologicalContextApi,
-}
+logger = logging.getLogger(__name__)
 
 
-class MyChemMcpServer:
-    """Enhanced MCP Server for MyChemInfo data."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.server_name = "mychem-mcp"
-        self.server_version = "0.3.0"
-        self.config = config or {}
-        self.mcp_server = Server(self.server_name, self.server_version)
-        
-        # Initialize client with configuration
-        self.client = MyChemClient(
-            timeout=self.config.get("timeout", 30.0),
-            cache_enabled=self.config.get("cache_enabled", True),
-            cache_ttl=self.config.get("cache_ttl", 3600),
-            rate_limit=self.config.get("rate_limit", 10)
-        )
-        
-        self._api_instances: Dict[type, Any] = {}
-        self._setup_handlers()
-        logger.info(f"{self.server_name} v{self.server_version} initialized with enhanced features.")
-    
-    def _setup_handlers(self):
-        """Register MCP handlers."""
-        
-        @self.mcp_server.list_tools()
-        async def handle_list_tools() -> list[types.Tool]:
-            """Returns the list of all available tools."""
-            logger.info(f"Listing {len(ALL_TOOLS)} available tools")
-            return ALL_TOOLS
-        
-        @self.mcp_server.call_tool()
-        async def handle_call_tool(
-            name: str, arguments: Dict[str, Any]
-        ) -> list[types.TextContent]:
-            """Handles a tool call request."""
-            logger.info(f"Handling call for tool: '{name}' with args: {list(arguments.keys())}")
-            
-            try:
-                if name not in API_CLASS_MAP:
-                    raise ValueError(f"Unknown tool: {name}")
-                
-                api_class = API_CLASS_MAP[name]
-                
-                if api_class not in self._api_instances:
-                    self._api_instances[api_class] = api_class()
-                
-                api_instance = self._api_instances[api_class]
-                
-                if not hasattr(api_instance, name):
-                    raise ValueError(f"Tool method '{name}' not found")
-                
-                func_to_call = getattr(api_instance, name)
-                result_data = await func_to_call(self.client, **arguments)
-                
-                # Handle export tools that return strings directly
-                if isinstance(result_data, str):
-                    return [types.TextContent(type="text", text=result_data)]
-                
-                result_json = json.dumps(result_data, indent=2)
-                return [types.TextContent(type="text", text=result_json)]
-            
-            except Exception as e:
-                logger.error(f"Error calling tool '{name}': {str(e)}", exc_info=True)
-                error_response = {
-                    "error": type(e).__name__,
-                    "message": str(e),
-                    "tool_name": name
-                }
-                return [types.TextContent(type="text", text=json.dumps(error_response, indent=2))]
-    
-    async def run(self):
-        """Starts the MCP server."""
-        logger.info(f"Starting {self.server_name} v{self.server_version}...")
-        logger.info(f"Configuration: cache_enabled={self.config.get('cache_enabled', True)}, "
-                   f"rate_limit={self.config.get('rate_limit', 10)}/s")
-        
-        async with stdio_server() as (read_stream, write_stream):
-            await self.mcp_server.run(
-                read_stream, 
-                write_stream,
-                self.mcp_server.create_initialization_options()
-            )
+# ---------------------------------------------------------------------------
+# Client lifecycle management
+# ---------------------------------------------------------------------------
+_client: Optional[MyChemClient] = None
+_client_config: Dict[str, Any] = {}
 
 
-def main():
-    """Main entry point with optional configuration."""
-    import os
-    
-    # Load configuration from environment variables
-    config = {
-        "cache_enabled": os.environ.get("MYCHEM_CACHE_ENABLED", "true").lower() == "true",
+def _load_client_config() -> Dict[str, Any]:
+    """Load client configuration from environment variables."""
+    def _bool(value: str, default: bool) -> bool:
+        try:
+            return value.lower() in {"1", "true", "yes", "on"}
+        except AttributeError:
+            return default
+
+    return {
+        "base_url": os.environ.get("MYCHEM_BASE_URL", "https://mychem.info/v1"),
+        "cache_enabled": _bool(os.environ.get("MYCHEM_CACHE_ENABLED", "true"), True),
         "cache_ttl": int(os.environ.get("MYCHEM_CACHE_TTL", "3600")),
         "rate_limit": int(os.environ.get("MYCHEM_RATE_LIMIT", "10")),
-        "timeout": float(os.environ.get("MYCHEM_TIMEOUT", "30.0"))
+        "timeout": float(os.environ.get("MYCHEM_TIMEOUT", "30.0")),
     }
-    
-    server = MyChemMcpServer(config)
+
+
+def get_client() -> MyChemClient:
+    """Return the active MyChemClient or raise if not initialised."""
+    if _client is None:
+        raise RuntimeError(
+            "MyChemClient not initialised. Tools must be called through the running MCP server."
+        )
+    return _client
+
+
+@asynccontextmanager
+async def lifespan(server: FastMCP):
+    """Initialise and clean up shared resources for FastMCP."""
+    global _client, _client_config
+
+    _client_config = _load_client_config()
+    logger.info(
+        "Starting MyChem MCP server with cache_enabled=%s cache_ttl=%s rate_limit=%s timeout=%s",
+        _client_config["cache_enabled"],
+        _client_config["cache_ttl"],
+        _client_config["rate_limit"],
+        _client_config["timeout"],
+    )
+
+    _client = MyChemClient(
+        base_url=_client_config["base_url"],
+        timeout=_client_config["timeout"],
+        cache_enabled=_client_config["cache_enabled"],
+        cache_ttl=_client_config["cache_ttl"],
+        rate_limit=_client_config["rate_limit"],
+    )
+
     try:
-        asyncio.run(server.run())
-    except KeyboardInterrupt:
-        logger.info("Server interrupted by user.")
-    except Exception as e:
-        logger.error(f"Server error: {e}")
+        yield
+    finally:
+        if _client is not None:
+            await _client.close()
+            _client = None
+            logger.info("MyChem MCP server shut down cleanly")
+
+
+# ---------------------------------------------------------------------------
+# FastMCP initialisation
+# ---------------------------------------------------------------------------
+mcp = FastMCP(
+    name="mychem-mcp",
+    version=package_version,
+    lifespan=lifespan,
+)
+
+_query_api = QueryApi()
+_annotation_api = AnnotationApi()
+_batch_api = BatchApi()
+_structure_api = StructureApi()
+_drug_api = DrugApi()
+_admet_api = ADMETApi()
+_patent_api = PatentApi()
+_clinical_api = ClinicalApi()
+_metadata_api = MetadataApi()
+_export_api = ExportApi()
+_mapping_api = MappingApi()
+_bioactivity_api = BioactivityApi()
+_biological_context_api = BiologicalContextApi()
+
+
+def _make_tool_wrapper(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap an API coroutine so the shared client is injected automatically."""
+
+    @functools.wraps(method)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        client = get_client()
+        return await method(client, *args, **kwargs)
+
+    signature = inspect.signature(method)
+    params = list(signature.parameters.values())[1:]
+    wrapper.__signature__ = signature.replace(parameters=params)  # type: ignore[attr-defined]
+    return wrapper
+
+
+def register_all_api_methods() -> None:
+    """Register every coroutine defined on the API classes as FastMCP tools."""
+    api_instances: Tuple[Any, ...] = (
+        _query_api,
+        _annotation_api,
+        _batch_api,
+        _structure_api,
+        _drug_api,
+        _admet_api,
+        _patent_api,
+        _clinical_api,
+        _metadata_api,
+        _export_api,
+        _mapping_api,
+        _bioactivity_api,
+        _biological_context_api,
+    )
+
+    for api in api_instances:
+        for name in dir(api):
+            if name.startswith("_"):
+                continue
+            method = getattr(api, name)
+            if not inspect.iscoroutinefunction(method):
+                continue
+            if name in getattr(mcp._tool_manager, "_tools", {}):
+                logger.debug("Tool already registered: %s", name)
+                continue
+            wrapper = _make_tool_wrapper(method)
+            mcp.tool(name=name)(wrapper)
+            logger.debug("Registered tool: %s", name)
+
+
+register_all_api_methods()
+
+
+# ---------------------------------------------------------------------------
+# Deprecated module-level guidance
+# ---------------------------------------------------------------------------
+
+def __getattr__(name: str) -> Any:  # pragma: no cover - guidance only
+    if name == "ALL_TOOLS":
+        raise AttributeError(
+            "ALL_TOOLS has been removed in v0.3.0. Use FastMCP list_tools instead."
+        )
+    if name == "API_CLASS_MAP":
+        raise AttributeError(
+            "API_CLASS_MAP has been removed in v0.3.0. Tool dispatch is handled by FastMCP."
+        )
+    raise AttributeError(name)
+
+
+# ---------------------------------------------------------------------------
+# Discovery endpoints for HTTP/SSE transports
+# ---------------------------------------------------------------------------
+
+
+@mcp.custom_route("/.well-known/mcp.json", methods=["GET"], include_in_schema=False)
+async def discovery_endpoint(request: Request) -> JSONResponse:
+    """Expose MCP discovery metadata for HTTP/SSE clients."""
+
+    base_url = str(request.base_url).rstrip("/")
+    sse_path = mcp._deprecated_settings.sse_path.lstrip("/")
+    message_path = mcp._deprecated_settings.message_path.lstrip("/")
+    http_path = mcp._deprecated_settings.streamable_http_path.lstrip("/")
+
+    capabilities = mcp._mcp_server.get_capabilities(
+        NotificationOptions(),
+        experimental_capabilities={}
+    )
+
+    transports: Dict[str, Dict[str, str]] = {
+        "sse": {
+            "url": f"{base_url}/{sse_path}",
+            "messageUrl": f"{base_url}/{message_path}",
+        }
+    }
+
+    transports["http"] = {
+        "url": f"{base_url}/{http_path}",
+    }
+
+    discovery = {
+        "protocolVersion": mcp_types.LATEST_PROTOCOL_VERSION,
+        "server": {
+            "name": mcp._mcp_server.name,
+            "version": mcp._mcp_server.version,
+            "instructions": mcp._mcp_server.instructions,
+        },
+        "capabilities": capabilities.model_dump(mode="json"),
+        "transports": transports,
+    }
+
+    return JSONResponse(discovery)
+
+
+@mcp.custom_route("/", methods=["GET"], include_in_schema=False)
+async def root_health(_: Request) -> JSONResponse:
+    """Simple health check endpoint."""
+
+    return JSONResponse({"status": "ok"})
+
+
+@mcp.custom_route(mcp._deprecated_settings.sse_path, methods=["POST"], include_in_schema=False)
+async def sse_message_fallback(_: Request) -> Response:
+    """Gracefully handle clients that POST to the SSE endpoint."""
+
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="MyChem MCP Server",
+        epilog="Environment overrides: MCP_TRANSPORT, FASTMCP_SERVER_HOST, FASTMCP_SERVER_PORT",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "http"],
+        default=os.getenv("MCP_TRANSPORT", "stdio"),
+        help="Transport protocol to expose (stdio, sse, or http)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("FASTMCP_SERVER_HOST", "0.0.0.0"),
+        help="Host for SSE transport (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("FASTMCP_SERVER_PORT", "8000")),
+        help="Port for SSE transport (default: 8000)",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (DEBUG level) logging",
+    )
+
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    if args.transport in {"sse", "http"}:
+        os.environ["FASTMCP_SERVER_HOST"] = args.host
+        os.environ["FASTMCP_SERVER_PORT"] = str(args.port)
+        if hasattr(mcp, "settings"):
+            mcp.settings.host = args.host  # type: ignore[attr-defined]
+            mcp.settings.port = args.port  # type: ignore[attr-defined]
+        logger.info("Configured %s host=%s port=%s", args.transport.upper(), args.host, args.port)
+
+    logger.info(
+        "Starting MyChem MCP server (transport=%s, host=%s, port=%s)",
+        args.transport,
+        args.host,
+        args.port,
+    )
+
+    try:
+        if args.transport == "http":
+            async def run_http() -> None:
+                await mcp.run_http_async(host=args.host, port=args.port)
+
+            anyio.run(run_http)
+        else:
+            mcp.run(transport=args.transport)
+    except KeyboardInterrupt:  # pragma: no cover - user interaction
+        logger.info("Server interrupted by user")
+    except Exception:  # pragma: no cover - unexpected runtime failure
+        logger.exception("Server encountered an unrecoverable error")
         raise
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
