@@ -1,13 +1,32 @@
 # src/mychem_mcp/tools/structure.py
 """Enhanced chemical structure tools."""
 
-from typing import Any, Dict, Optional, List
-import mcp.types as types
+from difflib import SequenceMatcher
+from typing import Any, Dict, List, Optional
+
 from ..client import MyChemClient
 
 
 class StructureApi:
     """Enhanced tools for chemical structure operations."""
+
+    @staticmethod
+    def _extract_hit_structure(hit: Dict[str, Any], structure_type: str) -> Optional[str]:
+        if structure_type == "smiles":
+            return (
+                hit.get("pubchem", {}).get("smiles", {}).get("canonical")
+                or hit.get("chembl", {}).get("smiles")
+            )
+        if structure_type == "inchi":
+            return hit.get("pubchem", {}).get("inchi") or hit.get("chembl", {}).get("inchi")
+        if structure_type == "inchikey":
+            return (
+                hit.get("pubchem", {}).get("inchikey")
+                or hit.get("chembl", {}).get("inchikey")
+                or hit.get("chembl", {}).get("inchi_key")
+                or hit.get("_id")
+            )
+        return None
     
     async def get_chemical_structure(
         self,
@@ -55,13 +74,40 @@ class StructureApi:
         }
         
         result = await client.get("query", params=params)
+        hits = result.get("hits", [])
+
+        if similarity is not None:
+            if not 0 <= similarity <= 1:
+                raise ValueError("similarity must be between 0 and 1")
+
+            passthrough_hits: List[Dict[str, Any]] = []
+            scored_hits: List[Dict[str, Any]] = []
+            for hit in hits:
+                if not isinstance(hit, dict):
+                    continue
+                candidate = self._extract_hit_structure(hit, structure_type)
+                if not candidate:
+                    passthrough_hits.append(dict(hit))
+                    continue
+                score = SequenceMatcher(
+                    None,
+                    structure.lower(),
+                    str(candidate).lower(),
+                ).ratio()
+                if score >= similarity:
+                    scored_hit = dict(hit)
+                    scored_hit["similarity_score"] = round(score, 4)
+                    scored_hits.append(scored_hit)
+            scored_hits.sort(key=lambda item: item["similarity_score"], reverse=True)
+            hits = scored_hits + passthrough_hits
         
         return {
             "success": True,
             "query_structure": structure,
             "structure_type": structure_type,
-            "total": result.get("total", 0),
-            "hits": result.get("hits", [])
+            "similarity_threshold": similarity,
+            "total": len(hits),
+            "hits": hits
         }
     
     async def convert_structure(
@@ -248,6 +294,7 @@ class StructureApi:
         For now, we'll return structure data that could be used for similarity.
         """
         structures = {}
+        failed_chemicals: List[Dict[str, str]] = []
         
         # Fetch SMILES for all chemicals
         for chem_id in chemical_ids:
@@ -269,15 +316,16 @@ class StructureApi:
                         "smiles": smiles,
                         "name": name
                     }
-            except:
-                pass
+            except Exception as exc:
+                failed_chemicals.append({"chemical_id": chem_id, "error": str(exc)})
         
         return {
             "success": True,
             "note": "Full similarity calculation requires fingerprint computation. Structure data provided for external processing.",
             "similarity_metric": similarity_metric,
             "chemicals": structures,
-            "matrix_size": f"{len(structures)}x{len(structures)}"
+            "matrix_size": f"{len(structures)}x{len(structures)}",
+            "failed_chemicals": failed_chemicals,
         }
     
     async def get_stereoisomers(
@@ -344,153 +392,3 @@ class StructureApi:
             "success": True,
             "stereoisomer_data": stereoisomer_info
         }
-
-
-STRUCTURE_TOOLS = [
-    types.Tool(
-        name="get_chemical_structure",
-        description="Get chemical structure representations (SMILES, InChI, InChIKey)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                },
-                "format": {
-                    "type": "string",
-                    "enum": ["smiles", "inchi", "inchikey", "mol", "all"],
-                    "default": "all",
-                    "description": "Structure format to retrieve"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="search_by_structure",
-        description="Search for similar chemicals by structure",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "structure": {
-                    "type": "string",
-                    "description": "Chemical structure string"
-                },
-                "structure_type": {
-                    "type": "string",
-                    "enum": ["smiles", "inchi", "inchikey"],
-                    "default": "smiles",
-                    "description": "Type of structure input"
-                },
-                "similarity": {
-                    "type": "number",
-                    "description": "Similarity threshold (0-1)",
-                    "default": 0.8
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["structure"]
-        }
-    ),
-    types.Tool(
-        name="convert_structure",
-        description="Convert between chemical structure formats",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "structure": {
-                    "type": "string",
-                    "description": "Input structure"
-                },
-                "from_format": {
-                    "type": "string",
-                    "enum": ["smiles", "inchi", "inchikey"],
-                    "description": "Input format"
-                },
-                "to_format": {
-                    "type": "string",
-                    "enum": ["smiles", "inchi", "inchikey"],
-                    "description": "Output format"
-                }
-            },
-            "required": ["structure", "from_format", "to_format"]
-        }
-    ),
-    types.Tool(
-        name="search_by_substructure",
-        description="Search for chemicals containing a specific substructure (simplified)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "substructure_smiles": {
-                    "type": "string",
-                    "description": "SMILES of substructure to search for"
-                },
-                "additional_filters": {
-                    "type": "object",
-                    "description": "Additional field filters"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 100
-                }
-            },
-            "required": ["substructure_smiles"]
-        }
-    ),
-    types.Tool(
-        name="get_structure_properties",
-        description="Get detailed structural and physicochemical properties",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="calculate_similarity_matrix",
-        description="Get structure data for pairwise similarity calculation",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemical identifiers"
-                },
-                "similarity_metric": {
-                    "type": "string",
-                    "description": "Similarity metric to use",
-                    "default": "tanimoto",
-                    "enum": ["tanimoto", "dice", "cosine"]
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    ),
-    types.Tool(
-        name="get_stereoisomers",
-        description="Get stereoisomer information and related isomers",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    )
-]

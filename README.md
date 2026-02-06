@@ -1,5 +1,10 @@
 # MyChem MCP Server
 
+[![CI](https://github.com/nickzren/mychem-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nickzren/mychem-mcp/actions/workflows/ci.yml)
+[![MCP Server](https://img.shields.io/badge/MCP-Server-2ea44f.svg)](https://modelcontextprotocol.io/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A Model Context Protocol (MCP) server that provides access to the [MyChem API](https://mychem.info/).
 
 ## Features

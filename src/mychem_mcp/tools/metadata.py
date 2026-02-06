@@ -2,7 +2,6 @@
 """Metadata and utility tools."""
 
 from typing import Any, Dict
-import mcp.types as types
 from ..client import MyChemClient
 
 
@@ -50,31 +49,3 @@ class MetadataApi:
             "success": True,
             "statistics": stats
         }
-
-
-METADATA_TOOLS = [
-    types.Tool(
-        name="get_mychem_metadata",
-        description="Get metadata about MyChemInfo API including data sources and statistics",
-        inputSchema={
-            "type": "object",
-            "properties": {}
-        }
-    ),
-    types.Tool(
-        name="get_available_fields",
-        description="Get a list of all available fields in MyChemInfo",
-        inputSchema={
-            "type": "object",
-            "properties": {}
-        }
-    ),
-    types.Tool(
-        name="get_database_statistics",
-        description="Get statistics about the chemical database",
-        inputSchema={
-            "type": "object",
-            "properties": {}
-        }
-    )
-]

@@ -2,7 +2,7 @@
 """Patent-related tools."""
 
 from typing import Any, Dict, Optional
-import mcp.types as types
+
 from ..client import MyChemClient
 
 
@@ -61,8 +61,11 @@ class PatentApi:
         size: Optional[int] = 10
     ) -> Dict[str, Any]:
         """Search for chemicals mentioned in patents."""
+        patent_query = (
+            "(_exists_:pharmgkb.patent OR _exists_:drugbank.patents OR _exists_:chembl.patent)"
+        )
         params = {
-            "q": f'_exists_:pharmgkb.patent OR _exists_:drugbank.patents OR _exists_:chembl.patent AND name:"{chemical_name}"',
+            "q": f'{patent_query} AND name:"{chemical_name}"',
             "fields": "inchikey,name,pharmgkb.patent,drugbank.patents,chembl.patent",
             "size": size
         }
@@ -75,40 +78,3 @@ class PatentApi:
             "total": result.get("total", 0),
             "hits": result.get("hits", [])
         }
-
-
-PATENT_TOOLS = [
-    types.Tool(
-        name="get_patent_data",
-        description="Get patent information for a chemical",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="search_patents_by_chemical",
-        description="Search for chemicals mentioned in patents",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_name": {
-                    "type": "string",
-                    "description": "Chemical name to search for"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["chemical_name"]
-        }
-    )
-]

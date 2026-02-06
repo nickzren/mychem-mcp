@@ -2,12 +2,19 @@
 """Chemical identifier mapping tools."""
 
 from typing import Any, Dict, List, Optional
-import mcp.types as types
 from ..client import MyChemClient, MyChemError
 
 
 class MappingApi:
     """Tools for mapping between chemical identifiers."""
+
+    @staticmethod
+    def _normalize_results(results: Any) -> List[Dict[str, Any]]:
+        if isinstance(results, list):
+            return [item for item in results if isinstance(item, dict)]
+        if isinstance(results, dict):
+            return [results]
+        raise MyChemError("Unexpected response format from MyChem API")
     
     async def map_identifiers(
         self,
@@ -61,7 +68,8 @@ class MappingApi:
             "fields": ",".join(return_fields)
         }
         
-        results = await client.post("query", post_data)
+        raw_results = await client.post("query", post_data)
+        results = self._normalize_results(raw_results)
         
         # Process results
         mappings = []
@@ -120,10 +128,10 @@ class MappingApi:
         }
     
     async def validate_identifiers(
-    self,
-    client: MyChemClient,
-    identifiers: List[str],
-    identifier_type: str
+        self,
+        client: MyChemClient,
+        identifiers: List[str],
+        identifier_type: str
     ) -> Dict[str, Any]:
         """Validate a list of chemical identifiers."""
         # Use mapping to check validity
@@ -226,74 +234,3 @@ class MappingApi:
             "common_chemicals_count": len(common_chemicals),
             "common_chemicals": common_chemicals
         }
-
-
-MAPPING_TOOLS = [
-    types.Tool(
-        name="map_identifiers",
-        description="Map chemical identifiers from one type to others (InChIKey, PubChem CID, ChEMBL ID, etc.)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "input_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of input identifiers"
-                },
-                "from_type": {
-                    "type": "string",
-                    "enum": ["inchikey", "pubchem", "chembl", "drugbank", "unii", "cas", "smiles", "inchi", "name"],
-                    "description": "Type of input identifiers"
-                },
-                "to_types": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "enum": ["inchikey", "pubchem", "chembl", "drugbank", "unii", "cas", "smiles", "inchi", "name"]
-                    },
-                    "description": "Types to map to"
-                },
-                "missing_ok": {
-                    "type": "boolean",
-                    "description": "Whether to include unmapped IDs in response",
-                    "default": True
-                }
-            },
-            "required": ["input_ids", "from_type", "to_types"]
-        }
-    ),
-    types.Tool(
-        name="validate_identifiers",
-        description="Validate a list of chemical identifiers",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "identifiers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of identifiers to validate"
-                },
-                "identifier_type": {
-                    "type": "string",
-                    "enum": ["inchikey", "pubchem", "chembl", "drugbank", "unii", "cas", "smiles", "inchi"],
-                    "description": "Type of identifiers"
-                }
-            },
-            "required": ["identifiers", "identifier_type"]
-        }
-    ),
-    types.Tool(
-        name="find_common_identifiers",
-        description="Find chemicals common across multiple identifier lists",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "identifier_lists": {
-                    "type": "object",
-                    "description": "Named lists of identifiers (e.g., {'drugbank_ids': [...], 'chembl_ids': [...]})"
-                }
-            },
-            "required": ["identifier_lists"]
-        }
-    )
-]

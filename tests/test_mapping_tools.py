@@ -3,6 +3,7 @@
 
 import pytest
 from mychem_mcp.tools.mapping import MappingApi
+from mychem_mcp.client import MyChemError
 
 
 class TestMappingTools:
@@ -49,6 +50,43 @@ class TestMappingTools:
         assert result["mapped"] == 1
         assert result["unmapped"] == 1
         assert "invalid" in result["unmapped_ids"]
+
+    @pytest.mark.asyncio
+    async def test_map_identifiers_single_dict_response(self, mock_client):
+        """Test mapping handles single-object API responses."""
+        mock_client.post.return_value = {
+            "found": True,
+            "query": "aspirin",
+            "_id": "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+            "pubchem": {"cid": 2244},
+        }
+
+        api = MappingApi()
+        result = await api.map_identifiers(
+            mock_client,
+            input_ids=["aspirin"],
+            from_type="name",
+            to_types=["inchikey", "pubchem"],
+        )
+
+        assert result["success"] is True
+        assert result["mapped"] == 1
+        assert result["mappings"][0]["mappings"]["inchikey"] == "BSYNRYMUTXBXSQ-UHFFFAOYSA-N"
+        assert result["mappings"][0]["mappings"]["pubchem"] == 2244
+
+    @pytest.mark.asyncio
+    async def test_map_identifiers_invalid_response_type(self, mock_client):
+        """Test mapping raises for unsupported API response types."""
+        mock_client.post.return_value = "invalid-response"
+
+        api = MappingApi()
+        with pytest.raises(MyChemError, match="Unexpected response format"):
+            await api.map_identifiers(
+                mock_client,
+                input_ids=["aspirin"],
+                from_type="name",
+                to_types=["inchikey"],
+            )
     
     @pytest.mark.asyncio
     async def test_validate_identifiers(self, mock_client):

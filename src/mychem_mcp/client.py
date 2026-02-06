@@ -1,12 +1,14 @@
 # src/mychem_mcp/client.py
 """MyChemInfo API client with caching support."""
 
-import httpx
-import hashlib
-import json
-from typing import Any, Dict, Optional
-from datetime import datetime, timedelta
 import asyncio
+import json
+from collections import OrderedDict
+from datetime import datetime, timedelta
+import hashlib
+from typing import Any, Dict, Optional
+
+import httpx
 
 
 class MyChemError(Exception):
@@ -27,23 +29,31 @@ class CacheEntry:
 
 class MyChemClient:
     """Client for MyChemInfo API with optional caching."""
-    
+
     def __init__(
         self,
         base_url: str = "https://mychem.info/v1",
         timeout: float = 30.0,
         cache_enabled: bool = True,
         cache_ttl: int = 3600,
-        rate_limit: Optional[int] = 10
+        rate_limit: Optional[int] = 10,
+        cache_max_entries: int = 5000,
     ):
-        self.base_url = base_url
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.cache_enabled = cache_enabled
         self.cache_ttl = cache_ttl
         self.rate_limit = rate_limit
-        self._cache: Dict[str, CacheEntry] = {}
+        self.cache_max_entries = max(1, cache_max_entries)
+        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._cache_gc_interval = 250
+        self._cache_set_ops = 0
         self._last_request_time = None
         self._request_count = 0
+        self._http_client = httpx.AsyncClient(
+            timeout=self.timeout,
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+        )
     
     def _get_cache_key(self, method: str, endpoint: str, params: Optional[Dict] = None, data: Any = None) -> str:
         """Generate cache key from request parameters."""
@@ -59,24 +69,46 @@ class MyChemClient:
         """Check if valid cached response exists."""
         if not self.cache_enabled:
             return None
-        
-        if cache_key in self._cache:
-            entry = self._cache[cache_key]
-            if not entry.is_expired():
-                return entry.data
-            else:
-                del self._cache[cache_key]
-        return None
-    
+
+        entry = self._cache.get(cache_key)
+        if entry is None:
+            return None
+
+        if entry.is_expired():
+            self._cache.pop(cache_key, None)
+            return None
+
+        self._cache.move_to_end(cache_key)
+        return entry.data
+
+    def _prune_expired_cache(self) -> None:
+        """Prune expired entries from cache."""
+        expired_keys = [key for key, entry in self._cache.items() if entry.is_expired()]
+        for key in expired_keys:
+            self._cache.pop(key, None)
+
+    def _evict_lru_if_needed(self) -> None:
+        """Evict least recently used entries to respect max cache size."""
+        while len(self._cache) > self.cache_max_entries:
+            self._cache.popitem(last=False)
+
     def _update_cache(self, cache_key: str, data: Any):
         """Update cache with new data."""
-        if self.cache_enabled:
-            self._cache[cache_key] = CacheEntry(data, self.cache_ttl)
-    
+        if not self.cache_enabled:
+            return
+
+        self._cache_set_ops += 1
+        if self._cache_set_ops % self._cache_gc_interval == 0:
+            self._prune_expired_cache()
+
+        self._cache[cache_key] = CacheEntry(data, self.cache_ttl)
+        self._cache.move_to_end(cache_key)
+        self._evict_lru_if_needed()
+
     def clear_cache(self):
         """Clear all cached entries."""
         self._cache.clear()
-    
+
     async def _apply_rate_limit(self):
         """Apply rate limiting if configured."""
         if self.rate_limit and self._last_request_time:
@@ -91,33 +123,32 @@ class MyChemClient:
                 self._request_count = 1
         else:
             self._request_count = 1
-        
+
         self._last_request_time = datetime.now()
-    
+
     async def get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Make GET request to MyChem API with caching."""
         cache_key = self._get_cache_key("GET", endpoint, params)
         cached_data = self._check_cache(cache_key)
         if cached_data is not None:
             return cached_data
-        
+
         await self._apply_rate_limit()
-        
+
         url = f"{self.base_url}/{endpoint}"
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(url, params=params, timeout=self.timeout)
-                response.raise_for_status()
-                data = response.json()
-                self._update_cache(cache_key, data)
-                return data
-            except httpx.TimeoutException:
-                raise MyChemError("Request timed out. Please try again.")
-            except httpx.HTTPStatusError as e:
-                raise MyChemError(f"HTTP error {e.response.status_code}: {e.response.text}")
-            except Exception as e:
-                raise MyChemError(f"Request failed: {str(e)}")
-    
+        try:
+            response = await self._http_client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            self._update_cache(cache_key, data)
+            return data
+        except httpx.TimeoutException:
+            raise MyChemError("Request timed out. Please try again.")
+        except httpx.HTTPStatusError as e:
+            raise MyChemError(f"HTTP error {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise MyChemError(f"Request failed: {str(e)}")
+
     async def post(self, endpoint: str, json_data: Any, use_cache: bool = True) -> Any:
         """Make POST request to MyChem API with optional caching."""
         cache_key = self._get_cache_key("POST", endpoint, data=json_data)
@@ -125,29 +156,25 @@ class MyChemClient:
             cached_data = self._check_cache(cache_key)
             if cached_data is not None:
                 return cached_data
-        
+
         await self._apply_rate_limit()
-        
+
         url = f"{self.base_url}/{endpoint}"
         headers = {"content-type": "application/json"}
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    url, json=json_data, headers=headers, timeout=self.timeout
-                )
-                response.raise_for_status()
-                data = response.json()
-                if use_cache:
-                    self._update_cache(cache_key, data)
-                return data
-            except httpx.TimeoutException:
-                raise MyChemError("Request timed out. Please try again.")
-            except httpx.HTTPStatusError as e:
-                raise MyChemError(f"HTTP error {e.response.status_code}: {e.response.text}")
-            except Exception as e:
-                raise MyChemError(f"Request failed: {str(e)}")
+        try:
+            response = await self._http_client.post(url, json=json_data, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            if use_cache:
+                self._update_cache(cache_key, data)
+            return data
+        except httpx.TimeoutException:
+            raise MyChemError("Request timed out. Please try again.")
+        except httpx.HTTPStatusError as e:
+            raise MyChemError(f"HTTP error {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise MyChemError(f"Request failed: {str(e)}")
 
     async def close(self) -> None:
-        """Close any persistent resources (placeholder for future enhancements)."""
-        # Async placeholder to mirror interface expected by FastMCP lifecycle.
-        return None
+        """Close persistent HTTP client resources."""
+        await self._http_client.aclose()

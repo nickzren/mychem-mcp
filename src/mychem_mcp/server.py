@@ -1,7 +1,6 @@
 """FastMCP-backed server for MyChem MCP tools."""
 from __future__ import annotations
 
-import anyio
 import functools
 import inspect
 import logging
@@ -9,11 +8,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, settings as fastmcp_settings
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 import mcp.types as mcp_types
-from mcp.server.lowlevel.server import NotificationOptions
 
 from . import __version__ as package_version
 from .client import MyChemClient
@@ -165,6 +163,7 @@ def register_all_api_methods() -> None:
         _bioactivity_api,
         _biological_context_api,
     )
+    registered_names: set[str] = set()
 
     for api in api_instances:
         for name in dir(api):
@@ -173,11 +172,12 @@ def register_all_api_methods() -> None:
             method = getattr(api, name)
             if not inspect.iscoroutinefunction(method):
                 continue
-            if name in getattr(mcp._tool_manager, "_tools", {}):
+            if name in registered_names:
                 logger.debug("Tool already registered: %s", name)
                 continue
             wrapper = _make_tool_wrapper(method)
             mcp.tool(name=name)(wrapper)
+            registered_names.add(name)
             logger.debug("Registered tool: %s", name)
 
 
@@ -210,14 +210,22 @@ async def discovery_endpoint(request: Request) -> JSONResponse:
     """Expose MCP discovery metadata for HTTP/SSE clients."""
 
     base_url = str(request.base_url).rstrip("/")
-    sse_path = mcp._deprecated_settings.sse_path.lstrip("/")
-    message_path = mcp._deprecated_settings.message_path.lstrip("/")
-    http_path = mcp._deprecated_settings.streamable_http_path.lstrip("/")
+    sse_path = fastmcp_settings.sse_path.lstrip("/")
+    message_path = fastmcp_settings.message_path.lstrip("/")
+    http_path = fastmcp_settings.streamable_http_path.lstrip("/")
 
-    capabilities = mcp._mcp_server.get_capabilities(
-        NotificationOptions(),
-        experimental_capabilities={}
-    )
+    tools = await mcp.get_tools()
+    resources = await mcp.get_resources()
+    resource_templates = await mcp.get_resource_templates()
+    prompts = await mcp.get_prompts()
+
+    capabilities: Dict[str, Dict[str, bool]] = {}
+    if tools:
+        capabilities["tools"] = {"listChanged": False}
+    if resources or resource_templates:
+        capabilities["resources"] = {"listChanged": False, "subscribe": False}
+    if prompts:
+        capabilities["prompts"] = {"listChanged": False}
 
     transports: Dict[str, Dict[str, str]] = {
         "sse": {
@@ -233,11 +241,11 @@ async def discovery_endpoint(request: Request) -> JSONResponse:
     discovery = {
         "protocolVersion": mcp_types.LATEST_PROTOCOL_VERSION,
         "server": {
-            "name": mcp._mcp_server.name,
-            "version": mcp._mcp_server.version,
-            "instructions": mcp._mcp_server.instructions,
+            "name": mcp.name,
+            "version": mcp.version,
+            "instructions": mcp.instructions,
         },
-        "capabilities": capabilities.model_dump(mode="json"),
+        "capabilities": capabilities,
         "transports": transports,
     }
 
@@ -251,7 +259,7 @@ async def root_health(_: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-@mcp.custom_route(mcp._deprecated_settings.sse_path, methods=["POST"], include_in_schema=False)
+@mcp.custom_route(fastmcp_settings.sse_path, methods=["POST"], include_in_schema=False)
 async def sse_message_fallback(_: Request) -> Response:
     """Gracefully handle clients that POST to the SSE endpoint."""
 
@@ -277,13 +285,13 @@ def main() -> None:
     parser.add_argument(
         "--host",
         default=os.getenv("FASTMCP_SERVER_HOST", "0.0.0.0"),
-        help="Host for SSE transport (default: 0.0.0.0)",
+        help="Host for SSE/HTTP transport (default: 0.0.0.0)",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=int(os.getenv("FASTMCP_SERVER_PORT", "8000")),
-        help="Port for SSE transport (default: 8000)",
+        help="Port for SSE/HTTP transport (default: 8000)",
     )
     parser.add_argument(
         "--verbose",
@@ -297,11 +305,6 @@ def main() -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     if args.transport in {"sse", "http"}:
-        os.environ["FASTMCP_SERVER_HOST"] = args.host
-        os.environ["FASTMCP_SERVER_PORT"] = str(args.port)
-        if hasattr(mcp, "settings"):
-            mcp.settings.host = args.host  # type: ignore[attr-defined]
-            mcp.settings.port = args.port  # type: ignore[attr-defined]
         logger.info("Configured %s host=%s port=%s", args.transport.upper(), args.host, args.port)
 
     logger.info(
@@ -312,11 +315,8 @@ def main() -> None:
     )
 
     try:
-        if args.transport == "http":
-            async def run_http() -> None:
-                await mcp.run_http_async(host=args.host, port=args.port)
-
-            anyio.run(run_http)
+        if args.transport in {"sse", "http"}:
+            mcp.run(transport=args.transport, host=args.host, port=args.port)
         else:
             mcp.run(transport=args.transport)
     except KeyboardInterrupt:  # pragma: no cover - user interaction

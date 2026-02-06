@@ -42,6 +42,31 @@ class TestStructureTools:
         assert result["success"] is True
         assert result["total"] == 1
         assert result["structure_type"] == "smiles"
+        assert result["similarity_threshold"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_search_by_structure_similarity_filtering(self, mock_client):
+        """Test similarity parameter filters mismatched string structures."""
+        mock_client.get.return_value = {
+            "total": 2,
+            "hits": [
+                {"_id": "chem1", "pubchem": {"smiles": {"canonical": "CCO"}}},
+                {"_id": "chem2", "pubchem": {"smiles": {"canonical": "NNN"}}},
+            ],
+        }
+
+        api = StructureApi()
+        result = await api.search_by_structure(
+            mock_client,
+            structure="CCO",
+            structure_type="smiles",
+            similarity=0.9,
+        )
+
+        assert result["success"] is True
+        assert result["total"] == 1
+        assert result["hits"][0]["_id"] == "chem1"
+        assert result["hits"][0]["similarity_score"] == 1.0
     
     @pytest.mark.asyncio
     async def test_convert_structure(self, mock_client):

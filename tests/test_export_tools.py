@@ -77,6 +77,26 @@ class TestExportTools:
         # Check TSV format
         assert "\t" in result
         assert "inchikey\tname" in result.split("\n")[0]
+
+    @pytest.mark.asyncio
+    async def test_export_chemical_list_sdf_uses_fallback_id_and_name(self, mock_client):
+        """Test SDF export uses _id and nested names when flat keys are absent."""
+        mock_client.post.return_value = [
+            {"_id": "chem1", "drugbank": {"name": "Chemical 1"}},
+            {"query": "chem2", "chembl": {"pref_name": "Chemical 2"}},
+        ]
+
+        api = ExportApi()
+        result = await api.export_chemical_list(
+            mock_client,
+            chemical_ids=["chem1", "chem2"],
+            format="sdf",
+        )
+
+        assert "> <INCHIKEY>\nchem1" in result
+        assert "> <NAME>\nChemical 1" in result
+        assert "> <INCHIKEY>\nchem2" in result
+        assert "> <NAME>\nChemical 2" in result
     
     @pytest.mark.asyncio
     async def test_export_filtered_dataset(self, mock_client):
@@ -102,6 +122,24 @@ class TestExportTools:
         assert len(data) == 25
         assert data[0]["_id"] == "chem0"
         assert data[24]["_id"] == "chem24"
+
+    @pytest.mark.asyncio
+    async def test_export_filtered_dataset_without_filters(self, mock_client):
+        """Test export_filtered_dataset works when filters are omitted."""
+        mock_client.get.return_value = {"total": 1, "hits": [{"_id": "chem1"}]}
+
+        api = ExportApi()
+        result = await api.export_filtered_dataset(
+            mock_client,
+            query="test",
+            format="json",
+            max_results=1,
+            batch_size=1,
+        )
+
+        data = json.loads(result)
+        assert len(data) == 1
+        assert data[0]["_id"] == "chem1"
     
     @pytest.mark.asyncio
     async def test_export_compound_comparison(self, mock_client):

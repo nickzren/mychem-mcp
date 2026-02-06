@@ -2,7 +2,6 @@
 """ADMET (Absorption, Distribution, Metabolism, Excretion, Toxicity) tools."""
 
 from typing import Any, Dict, Optional
-import mcp.types as types
 from ..client import MyChemClient
 
 
@@ -106,35 +105,3 @@ class ADMETApi:
             "success": True,
             "toxicity_data": toxicity_data
         }
-
-
-ADMET_TOOLS = [
-    types.Tool(
-        name="get_admet_properties",
-        description="Get ADMET (Absorption, Distribution, Metabolism, Excretion, Toxicity) properties",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="predict_toxicity",
-        description="Get toxicity predictions and hazard classifications",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    )
-]

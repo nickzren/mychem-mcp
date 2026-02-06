@@ -1,17 +1,37 @@
 # src/mychem_mcp/tools/export.py
 """Enhanced data export tools."""
 
-from typing import Any, Dict, List, Optional
-import json
 import csv
 import io
-import asyncio
-import mcp.types as types
+import json
+from typing import Any, Dict, List, Optional
+
 from ..client import MyChemClient
 
 
 class ExportApi:
     """Enhanced tools for exporting chemical data."""
+
+    @staticmethod
+    def _normalize_records(results: Any) -> List[Dict[str, Any]]:
+        if isinstance(results, list):
+            return [item for item in results if isinstance(item, dict)]
+        if isinstance(results, dict):
+            return [results]
+        return []
+
+    @staticmethod
+    def _extract_compound_name(record: Dict[str, Any]) -> str:
+        return (
+            record.get("name")
+            or record.get("drugbank", {}).get("name")
+            or record.get("chembl", {}).get("pref_name")
+            or ""
+        )
+
+    @staticmethod
+    def _extract_compound_id(record: Dict[str, Any]) -> str:
+        return record.get("inchikey") or record.get("_id") or record.get("query") or ""
     
     async def export_chemical_list(
         self,
@@ -31,8 +51,9 @@ class ExportApi:
             "ids": chemical_ids,
             "fields": fields_str
         }
-        
-        results = await client.post("chem", post_data)
+
+        raw_results = await client.post("chem", post_data)
+        results = self._normalize_records(raw_results)
         
         # Format based on requested type
         if format == "json":
@@ -75,10 +96,10 @@ class ExportApi:
             sdf_output = []
             for chem in results:
                 sdf_output.append(f"> <INCHIKEY>")
-                sdf_output.append(chem.get("inchikey", ""))
+                sdf_output.append(self._extract_compound_id(chem))
                 sdf_output.append("")
                 sdf_output.append(f"> <NAME>")
-                sdf_output.append(chem.get("name", ""))
+                sdf_output.append(self._extract_compound_name(chem))
                 sdf_output.append("")
                 sdf_output.append("$$$$")
             
@@ -91,7 +112,7 @@ class ExportApi:
         self,
         client: MyChemClient,
         query: str,
-        filters: Dict[str, Any],
+        filters: Optional[Dict[str, Any]] = None,
         format: str = "csv",
         fields: Optional[List[str]] = None,
         max_results: int = 10000,
@@ -106,7 +127,7 @@ class ExportApi:
         
         # Build query with filters
         query_parts = [query]
-        for field, value in filters.items():
+        for field, value in (filters or {}).items():
             if isinstance(value, dict):
                 # Range query
                 if "min" in value or "max" in value:
@@ -235,8 +256,9 @@ class ExportApi:
             "ids": chemical_ids,
             "fields": ",".join(all_fields)
         }
-        
-        results = await client.post("chem", post_data)
+
+        raw_results = await client.post("chem", post_data)
+        results = self._normalize_records(raw_results)
         
         # Create comparison matrix
         comparison_data = []
@@ -441,118 +463,3 @@ class ExportApi:
         
         else:
             raise ValueError(f"Unsupported format: {format}")
-
-
-EXPORT_TOOLS = [
-    types.Tool(
-        name="export_chemical_list",
-        description="Export chemical data in various formats (TSV, CSV, JSON, SDF)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemical IDs to export"
-                },
-                "format": {
-                    "type": "string",
-                    "description": "Export format",
-                    "default": "tsv",
-                    "enum": ["tsv", "csv", "json", "sdf"]
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Fields to include in export"
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    ),
-    types.Tool(
-        name="export_filtered_dataset",
-        description="Export large filtered datasets with pagination support",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Base search query"
-                },
-                "filters": {
-                    "type": "object",
-                    "description": "Additional filters (field: value or field: {min, max})"
-                },
-                "format": {
-                    "type": "string",
-                    "description": "Export format",
-                    "default": "csv",
-                    "enum": ["csv", "tsv", "json"]
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Fields to export"
-                },
-                "max_results": {
-                    "type": "integer",
-                    "description": "Maximum results to export",
-                    "default": 10000
-                },
-                "batch_size": {
-                    "type": "integer",
-                    "description": "Batch size for pagination",
-                    "default": 1000
-                }
-            },
-            "required": ["query"]
-        }
-    ),
-    types.Tool(
-        name="export_compound_comparison",
-        description="Export a comparison table of multiple compounds",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemicals to compare"
-                },
-                "comparison_fields": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Fields to compare"
-                },
-                "format": {
-                    "type": "string",
-                    "description": "Export format",
-                    "default": "csv",
-                    "enum": ["csv", "tsv", "json", "markdown"]
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    ),
-    types.Tool(
-        name="export_activity_profile",
-        description="Export comprehensive activity profile for a chemical",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                },
-                "format": {
-                    "type": "string",
-                    "description": "Export format",
-                    "default": "json",
-                    "enum": ["json", "markdown"]
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    )
-]

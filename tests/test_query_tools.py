@@ -139,6 +139,29 @@ class TestQueryTools:
         assert len(result["top_values"]) == 3
         assert result["top_values"][0]["value"] == "Small molecule"
         assert result["top_values"][0]["percentage"] == 80.0
+
+    @pytest.mark.asyncio
+    async def test_get_field_statistics_zero_total(self, mock_client):
+        """Test field stats does not divide by zero when total is explicitly zero."""
+        mock_client.get.return_value = {
+            "total": 0,
+            "facets": {
+                "chembl.molecule_type": {
+                    "total": 1,
+                    "terms": [{"term": "Small molecule", "count": 0}],
+                }
+            },
+        }
+
+        api = QueryApi()
+        result = await api.get_field_statistics(
+            mock_client,
+            field="chembl.molecule_type",
+        )
+
+        assert result["success"] is True
+        assert result["total_chemicals"] == 0
+        assert result["top_values"][0]["percentage"] == 0.0
     
     @pytest.mark.asyncio
     async def test_search_by_molecular_properties(self, mock_client):

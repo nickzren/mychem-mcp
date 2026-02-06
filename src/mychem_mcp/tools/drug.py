@@ -2,7 +2,6 @@
 """Drug-specific tools."""
 
 from typing import Any, Dict, Optional, List
-import mcp.types as types
 from ..client import MyChemClient
 
 
@@ -119,64 +118,3 @@ class DrugApi:
             "drug_id": drug_id,
             "targets": targets
         }
-
-
-DRUG_TOOLS = [
-    types.Tool(
-        name="search_drug",
-        description="Search for drugs with information from DrugBank, ChEMBL, and other sources",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Drug name or identifier"
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Fields to return",
-                    "default": "drugbank,chembl,pubchem,name,pharmgkb"
-                },
-                "include_withdrawn": {
-                    "type": "boolean",
-                    "description": "Include withdrawn drugs in results",
-                    "default": False
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["query"]
-        }
-    ),
-    types.Tool(
-        name="get_drug_interactions",
-        description="Get drug-drug interaction information",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "drug_id": {
-                    "type": "string",
-                    "description": "Drug identifier (InChIKey, ChEMBL ID, etc.)"
-                }
-            },
-            "required": ["drug_id"]
-        }
-    ),
-    types.Tool(
-        name="get_drug_targets",
-        description="Get drug target proteins and mechanisms",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "drug_id": {
-                    "type": "string",
-                    "description": "Drug identifier"
-                }
-            },
-            "required": ["drug_id"]
-        }
-    )
-]

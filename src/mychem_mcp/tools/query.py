@@ -2,7 +2,6 @@
 """Enhanced chemical query tools."""
 
 from typing import Any, Dict, Optional, List
-import mcp.types as types
 from ..client import MyChemClient
 
 
@@ -93,6 +92,8 @@ class QueryApi:
         
         facet_data = result.get("facets", {}).get(field, {})
         terms = facet_data.get("terms", [])
+        total_chemicals = result.get("total", 0)
+        percentage_base = total_chemicals if total_chemicals > 0 else 1
         
         return {
             "success": True,
@@ -102,11 +103,11 @@ class QueryApi:
                 {
                     "value": term["term"],
                     "count": term["count"],
-                    "percentage": round(term["count"] / result.get("total", 1) * 100, 2)
+                    "percentage": round(term["count"] / percentage_base * 100, 2)
                 }
                 for term in terms
             ],
-            "total_chemicals": result.get("total", 0)
+            "total_chemicals": total_chemicals
         }
     
     async def search_by_molecular_properties(
@@ -215,214 +216,3 @@ class QueryApi:
             fields=fields,
             size=size
         )
-
-
-# Add new tools to QUERY_TOOLS
-QUERY_TOOLS = [
-    types.Tool(
-        name="search_chemical",
-        description="Search for chemicals using various query types (name, formula, InChI, SMILES, etc.)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "q": {
-                    "type": "string",
-                    "description": "Query string (e.g., 'aspirin', 'C9H8O4', 'BSYNRYMUTXBXSQ-UHFFFAOYSA-N')"
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Comma-separated fields to return",
-                    "default": "inchikey,pubchem,chembl,drugbank,name"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results to return (max 1000)",
-                    "default": 10
-                },
-                "from_": {
-                    "type": "integer",
-                    "description": "Starting result offset for pagination"
-                },
-                "sort": {
-                    "type": "string",
-                    "description": "Sort order for results"
-                },
-                "facets": {
-                    "type": "string",
-                    "description": "Facet fields for aggregation"
-                },
-                "facet_size": {
-                    "type": "integer",
-                    "description": "Number of facet results",
-                    "default": 10
-                },
-                "fetch_all": {
-                    "type": "boolean",
-                    "description": "Fetch all results (returns scroll_id)",
-                    "default": False
-                },
-                "scroll_id": {
-                    "type": "string",
-                    "description": "Scroll ID for fetching next batch"
-                }
-            },
-            "required": ["q"]
-        }
-    ),
-    types.Tool(
-        name="search_by_field",
-        description="Search chemicals by specific field values with boolean logic",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "field_queries": {
-                    "type": "object",
-                    "description": "Field-value pairs (e.g., {'chembl.molecule_chembl_id': 'CHEMBL25'})"
-                },
-                "operator": {
-                    "type": "string",
-                    "description": "Boolean operator: AND or OR",
-                    "default": "AND",
-                    "enum": ["AND", "OR"]
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Fields to return",
-                    "default": "inchikey,pubchem,chembl,drugbank,name"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["field_queries"]
-        }
-    ),
-    types.Tool(
-        name="get_field_statistics",
-        description="Get statistics and top values for a specific field",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "field": {
-                    "type": "string",
-                    "description": "Field to analyze (e.g., 'chembl.molecule_type', 'drugbank.groups')"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of top values to return",
-                    "default": 100
-                }
-            },
-            "required": ["field"]
-        }
-    ),
-    types.Tool(
-        name="search_by_molecular_properties",
-        description="Search chemicals by molecular property ranges (MW, LogP, HBD, HBA, TPSA, etc.)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "mw_min": {
-                    "type": "number",
-                    "description": "Minimum molecular weight"
-                },
-                "mw_max": {
-                    "type": "number",
-                    "description": "Maximum molecular weight"
-                },
-                "logp_min": {
-                    "type": "number",
-                    "description": "Minimum LogP"
-                },
-                "logp_max": {
-                    "type": "number",
-                    "description": "Maximum LogP"
-                },
-                "hbd_max": {
-                    "type": "integer",
-                    "description": "Maximum hydrogen bond donors"
-                },
-                "hba_max": {
-                    "type": "integer",
-                    "description": "Maximum hydrogen bond acceptors"
-                },
-                "tpsa_max": {
-                    "type": "number",
-                    "description": "Maximum topological polar surface area"
-                },
-                "rotatable_bonds_max": {
-                    "type": "integer",
-                    "description": "Maximum rotatable bonds"
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Fields to return",
-                    "default": "inchikey,pubchem,chembl,drugbank,name"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            }
-        }
-    ),
-    types.Tool(
-        name="build_complex_query",
-        description="Build complex queries with multiple criteria and logic",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "criteria": {
-                    "type": "array",
-                    "description": "List of query criteria",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "type": {
-                                "type": "string",
-                                "enum": ["field", "range", "exists", "text"],
-                                "description": "Criterion type"
-                            },
-                            "field": {
-                                "type": "string",
-                                "description": "Field name (for field, range, exists types)"
-                            },
-                            "value": {
-                                "type": "string",
-                                "description": "Value (for field and text types)"
-                            },
-                            "min": {
-                                "type": "number",
-                                "description": "Minimum value (for range type)"
-                            },
-                            "max": {
-                                "type": "number",
-                                "description": "Maximum value (for range type)"
-                            }
-                        }
-                    }
-                },
-                "logic": {
-                    "type": "string",
-                    "description": "Logic operator between criteria",
-                    "default": "AND",
-                    "enum": ["AND", "OR"]
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Fields to return",
-                    "default": "inchikey,pubchem,chembl,drugbank,name"
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["criteria"]
-        }
-    )
-]

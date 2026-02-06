@@ -59,3 +59,20 @@ class TestClinicalTools:
         
         assert result["success"] is True
         assert result["fda_data"]["approval_status"] == "Phase 3"
+
+    @pytest.mark.asyncio
+    async def test_get_fda_approval_does_not_override_confirmed_approval(self, mock_client):
+        """Test lower max_phase does not overwrite confirmed approval."""
+        mock_client.get.return_value = {
+            "drugbank": {"fda_approval": {"status": "approved"}},
+            "chembl": {"max_phase": 3},
+        }
+
+        api = ClinicalApi()
+        result = await api.get_fda_approval(
+            mock_client,
+            chemical_id="test-id",
+        )
+
+        assert result["success"] is True
+        assert result["fda_data"]["approval_status"] == "Approved"

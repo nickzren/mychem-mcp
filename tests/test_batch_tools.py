@@ -83,3 +83,50 @@ class TestBatchTools:
         
         call_args = mock_client.post.call_args[0]
         assert call_args[1]["email"] == "test@example.com"
+
+    @pytest.mark.asyncio
+    async def test_batch_query_chemicals_single_dict_response(self, mock_client):
+        """Test batch query when API returns a single object."""
+        mock_client.post.return_value = {
+            "_id": "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+            "query": "aspirin",
+            "found": True,
+        }
+
+        api = BatchApi()
+        result = await api.batch_query_chemicals(
+            mock_client,
+            chemical_ids=["aspirin"],
+        )
+
+        assert result["success"] is True
+        assert result["total"] == 1
+        assert result["found"] == 1
+        assert result["missing"] == 0
+
+    @pytest.mark.asyncio
+    async def test_batch_get_chemicals_single_dict_response(self, mock_client):
+        """Test batch get when API returns a single object."""
+        mock_client.post.return_value = {"_id": "chem1", "name": "Chemical 1"}
+
+        api = BatchApi()
+        result = await api.batch_get_chemicals(
+            mock_client,
+            chemical_ids=["chem1"],
+        )
+
+        assert result["success"] is True
+        assert result["total"] == 1
+        assert result["chemicals"][0]["_id"] == "chem1"
+
+    @pytest.mark.asyncio
+    async def test_batch_query_chemicals_unexpected_response_type(self, mock_client):
+        """Test batch query raises on unexpected API response types."""
+        mock_client.post.return_value = "invalid-response"
+
+        api = BatchApi()
+        with pytest.raises(MyChemError, match="Unexpected response format"):
+            await api.batch_query_chemicals(
+                mock_client,
+                chemical_ids=["aspirin"],
+            )

@@ -2,7 +2,7 @@
 """Bioactivity and assay data tools."""
 
 from typing import Any, Dict, Optional, List
-import mcp.types as types
+
 from ..client import MyChemClient
 
 
@@ -51,11 +51,11 @@ class BioactivityApi:
                     continue
                 if target_type and activity.get("target_type") != target_type:
                     continue
-                if min_potency and activity.get("standard_value"):
+                if min_potency is not None and activity.get("standard_value") is not None:
                     try:
                         if float(activity["standard_value"]) > min_potency:
                             continue
-                    except:
+                    except (TypeError, ValueError):
                         continue
                 
                 processed_activity = {
@@ -168,7 +168,7 @@ class BioactivityApi:
                                     "units": units,
                                     "assay_id": activity.get("assay_chembl_id")
                                 })
-                        except:
+                        except (TypeError, ValueError):
                             pass
             
             if compound["relevant_activities"]:
@@ -246,9 +246,14 @@ class BioactivityApi:
                     if target not in comparison_data["target_summary"]:
                         comparison_data["target_summary"][target] = {
                             "compounds_tested": 0,
-                            "activity_types": set()
+                            "activity_types": []
                         }
-                    comparison_data["target_summary"][target]["activity_types"].add(act_type)
+                    if (
+                        act_type
+                        and act_type
+                        not in comparison_data["target_summary"][target]["activity_types"]
+                    ):
+                        comparison_data["target_summary"][target]["activity_types"].append(act_type)
             
             comparison_data["compounds"].append(compound_data)
         
@@ -257,101 +262,8 @@ class BioactivityApi:
             count = sum(1 for comp in comparison_data["compounds"] 
                        if target in comp["activities_by_target"])
             comparison_data["target_summary"][target]["compounds_tested"] = count
-            comparison_data["target_summary"][target]["activity_types"] = \
-                list(comparison_data["target_summary"][target]["activity_types"])
         
         return {
             "success": True,
             "comparison": comparison_data
         }
-
-
-BIOACTIVITY_TOOLS = [
-    types.Tool(
-        name="get_bioassay_data",
-        description="Get bioactivity and assay results for a chemical",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                },
-                "activity_type": {
-                    "type": "string",
-                    "description": "Filter by activity type (e.g., IC50, EC50, Ki)"
-                },
-                "target_type": {
-                    "type": "string",
-                    "description": "Filter by target type (e.g., SINGLE PROTEIN, PROTEIN COMPLEX)"
-                },
-                "min_potency": {
-                    "type": "number",
-                    "description": "Maximum activity value (more potent compounds)"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="search_active_compounds",
-        description="Search for compounds active against a specific target",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "target_name": {
-                    "type": "string",
-                    "description": "Target protein name"
-                },
-                "activity_type": {
-                    "type": "string",
-                    "description": "Activity measurement type",
-                    "default": "IC50",
-                    "enum": ["IC50", "EC50", "Ki", "Kd", "pIC50", "pEC50"]
-                },
-                "max_value": {
-                    "type": "number",
-                    "description": "Maximum activity value (threshold)",
-                    "default": 1000
-                },
-                "units": {
-                    "type": "string",
-                    "description": "Units for activity value",
-                    "default": "nM",
-                    "enum": ["nM", "uM", "M"]
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 10
-                }
-            },
-            "required": ["target_name"]
-        }
-    ),
-    types.Tool(
-        name="compare_compound_activities",
-        description="Compare bioactivities across multiple compounds",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemical identifiers to compare"
-                },
-                "target_name": {
-                    "type": "string",
-                    "description": "Filter by specific target name"
-                },
-                "activity_types": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Activity types to include",
-                    "default": ["IC50", "EC50", "Ki", "Kd"]
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    )
-]

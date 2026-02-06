@@ -2,7 +2,7 @@
 """Batch operation tools."""
 
 from typing import Any, Dict, List, Optional
-import mcp.types as types
+
 from ..client import MyChemClient, MyChemError
 
 MAX_BATCH_SIZE = 1000
@@ -10,6 +10,14 @@ MAX_BATCH_SIZE = 1000
 
 class BatchApi:
     """Tools for batch operations on chemicals."""
+
+    @staticmethod
+    def _normalize_results(results: Any) -> List[Dict[str, Any]]:
+        if isinstance(results, list):
+            return [item for item in results if isinstance(item, dict)]
+        if isinstance(results, dict):
+            return [results]
+        raise MyChemError("Unexpected response format from MyChem API")
     
     async def batch_query_chemicals(
         self,
@@ -34,7 +42,8 @@ class BatchApi:
         if returnall is not None:
             post_data["returnall"] = returnall
         
-        results = await client.post("query", post_data)
+        raw_results = await client.post("query", post_data)
+        results = self._normalize_results(raw_results)
         
         # Process results
         found = []
@@ -75,76 +84,10 @@ class BatchApi:
             post_data["email"] = email
         
         results = await client.post("chem", post_data)
+        normalized_results = self._normalize_results(results)
         
         return {
             "success": True,
-            "total": len(results),
-            "chemicals": results
+            "total": len(normalized_results),
+            "chemicals": normalized_results
         }
-
-
-BATCH_TOOLS = [
-    types.Tool(
-        name="batch_query_chemicals",
-        description="Query multiple chemicals in a single request (up to 1000)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemical IDs to query"
-                },
-                "scopes": {
-                    "type": "string",
-                    "description": "Comma-separated fields to search",
-                    "default": "inchikey,chembl.molecule_chembl_id,drugbank.id,pubchem.cid"
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Comma-separated fields to return",
-                    "default": "inchikey,pubchem,chembl,drugbank,name"
-                },
-                "dotfield": {
-                    "type": "boolean",
-                    "description": "Control dotfield notation",
-                    "default": True
-                },
-                "returnall": {
-                    "type": "boolean",
-                    "description": "Return all results including no matches",
-                    "default": True
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    ),
-    types.Tool(
-        name="batch_get_chemicals",
-        description="Get full annotations for multiple chemicals (up to 1000)",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of chemical IDs"
-                },
-                "fields": {
-                    "type": "string",
-                    "description": "Comma-separated fields to return"
-                },
-                "dotfield": {
-                    "type": "boolean",
-                    "description": "Control dotfield notation",
-                    "default": True
-                },
-                "email": {
-                    "type": "string",
-                    "description": "Email for large requests"
-                }
-            },
-            "required": ["chemical_ids"]
-        }
-    )
-]

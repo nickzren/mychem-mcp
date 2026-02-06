@@ -3,14 +3,8 @@
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-import sys
-import os
-from datetime import datetime, timedelta
 
-# Add the src directory to Python path for testing
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from mychem_mcp.client import MyChemClient, CacheEntry
+from mychem_mcp.client import MyChemClient
 
 
 @pytest.fixture

@@ -44,6 +44,32 @@ class TestBiologicalContextTools:
         assert diseases["pharmacodynamics"] is None  # Not in sample
         assert len(diseases["therapeutic_categories"]) == 2
         assert "Analgesics" in diseases["therapeutic_categories"]
+
+    @pytest.mark.asyncio
+    async def test_get_disease_associations_include_offlabel(self, mock_client):
+        """Test optional off-label extraction when requested."""
+        mock_client.get.return_value = {
+            "drugbank": {
+                "off_label_uses": ["Migraine prevention"]
+            }
+        }
+
+        api = BiologicalContextApi()
+        result_without_offlabel = await api.get_disease_associations(
+            mock_client,
+            chemical_id="test-id",
+            include_offlabel=False,
+        )
+        result_with_offlabel = await api.get_disease_associations(
+            mock_client,
+            chemical_id="test-id",
+            include_offlabel=True,
+        )
+
+        assert result_without_offlabel["disease_associations"]["offlabel_uses"] == []
+        assert result_with_offlabel["disease_associations"]["offlabel_uses"] == [
+            "Migraine prevention"
+        ]
     
     @pytest.mark.asyncio
     async def test_search_by_indication(self, mock_client):

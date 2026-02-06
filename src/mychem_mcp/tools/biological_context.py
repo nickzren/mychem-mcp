@@ -2,7 +2,7 @@
 """Biological context and pathway tools."""
 
 from typing import Any, Dict, Optional, List
-import mcp.types as types
+
 from ..client import MyChemClient
 
 
@@ -106,6 +106,7 @@ class BiologicalContextApi:
         fields = [
             "drugbank.indication",
             "drugbank.pharmacodynamics",
+            "drugbank.off_label_uses",
             "chembl.indication_class",
             "pharmgkb.diseases",
             "drugbank.categories"
@@ -119,7 +120,8 @@ class BiologicalContextApi:
             "approved_indications": [],
             "disease_associations": [],
             "therapeutic_categories": [],
-            "pharmacodynamics": None
+            "pharmacodynamics": None,
+            "offlabel_uses": [],
         }
         
         # Extract DrugBank data
@@ -140,6 +142,12 @@ class BiologicalContextApi:
                 if not isinstance(categories, list):
                     categories = [categories]
                 disease_data["therapeutic_categories"] = categories
+
+            if include_offlabel and "off_label_uses" in db:
+                offlabel_uses = db["off_label_uses"]
+                if not isinstance(offlabel_uses, list):
+                    offlabel_uses = [offlabel_uses]
+                disease_data["offlabel_uses"] = offlabel_uses
         
         # Extract ChEMBL indication class
         if "chembl" in result and "indication_class" in result["chembl"]:
@@ -334,103 +342,3 @@ class BiologicalContextApi:
             "total_found": len(drugs),
             "drugs": drugs
         }
-
-
-BIOLOGICAL_CONTEXT_TOOLS = [
-    types.Tool(
-        name="get_pathway_associations",
-        description="Get metabolic and signaling pathway associations for a chemical",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="get_disease_associations",
-        description="Get disease associations and therapeutic indications",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                },
-                "include_offlabel": {
-                    "type": "boolean",
-                    "description": "Include off-label uses",
-                    "default": False
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="search_by_indication",
-        description="Search for drugs by therapeutic indication",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "indication": {
-                    "type": "string",
-                    "description": "Disease or condition to treat"
-                },
-                "drug_status": {
-                    "type": "string",
-                    "description": "Drug approval status filter",
-                    "default": "approved",
-                    "enum": ["approved", "investigational", "experimental", None]
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 20
-                }
-            },
-            "required": ["indication"]
-        }
-    ),
-    types.Tool(
-        name="get_mechanism_of_action",
-        description="Get detailed mechanism of action information",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="find_drugs_by_target_class",
-        description="Find drugs that act on a specific target class (e.g., 'Kinase', 'GPCR')",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "target_class": {
-                    "type": "string",
-                    "description": "Target protein class"
-                },
-                "include_investigational": {
-                    "type": "boolean",
-                    "description": "Include investigational drugs",
-                    "default": False
-                },
-                "size": {
-                    "type": "integer",
-                    "description": "Number of results",
-                    "default": 20
-                }
-            },
-            "required": ["target_class"]
-        }
-    )
-]

@@ -2,7 +2,7 @@
 """Clinical trials and FDA approval tools."""
 
 from typing import Any, Dict, Optional
-import mcp.types as types
+
 from ..client import MyChemClient
 
 
@@ -66,6 +66,7 @@ class ClinicalApi:
             "approval_status": "Unknown",
             "approval_details": {}
         }
+        has_confirmed_approval = False
         
         # Check FDA approval from different sources
         if "drugbank" in result:
@@ -73,54 +74,24 @@ class ClinicalApi:
             if "fda_approval" in drugbank:
                 fda_data["approval_status"] = "Approved"
                 fda_data["approval_details"]["drugbank"] = drugbank["fda_approval"]
+                has_confirmed_approval = True
             if "fda_label" in drugbank:
                 fda_data["approval_details"]["fda_label"] = drugbank["fda_label"]
         
         if "pharmgkb" in result and "fda_approval" in result["pharmgkb"]:
             fda_data["approval_status"] = "Approved"
             fda_data["approval_details"]["pharmgkb"] = result["pharmgkb"]["fda_approval"]
+            has_confirmed_approval = True
         
         if "chembl" in result and "max_phase" in result["chembl"]:
             max_phase = result["chembl"]["max_phase"]
             fda_data["approval_details"]["max_phase"] = max_phase
             if max_phase == 4:
                 fda_data["approval_status"] = "Approved"
-            elif max_phase < 4:
+            elif max_phase < 4 and not has_confirmed_approval:
                 fda_data["approval_status"] = f"Phase {max_phase}"
         
         return {
             "success": True,
             "fda_data": fda_data
         }
-
-
-CLINICAL_TOOLS = [
-    types.Tool(
-        name="get_clinical_trials",
-        description="Get clinical trials data for a drug",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical/drug identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    ),
-    types.Tool(
-        name="get_fda_approval",
-        description="Get FDA approval status and label information",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "chemical_id": {
-                    "type": "string",
-                    "description": "Chemical/drug identifier"
-                }
-            },
-            "required": ["chemical_id"]
-        }
-    )
-]

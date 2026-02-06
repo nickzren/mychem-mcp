@@ -60,3 +60,5 @@ class TestPatentTools:
         call_args = mock_client.get.call_args[1]["params"]["q"]
         assert "patent" in call_args
         assert "test chemical" in call_args
+        assert call_args.startswith("(")
+        assert ") AND name:" in call_args
