@@ -214,10 +214,10 @@ async def discovery_endpoint(request: Request) -> JSONResponse:
     message_path = fastmcp_settings.message_path.lstrip("/")
     http_path = fastmcp_settings.streamable_http_path.lstrip("/")
 
-    tools = await mcp.get_tools()
-    resources = await mcp.get_resources()
-    resource_templates = await mcp.get_resource_templates()
-    prompts = await mcp.get_prompts()
+    tools = await mcp.list_tools()
+    resources = await mcp.list_resources()
+    resource_templates = await mcp.list_resource_templates()
+    prompts = await mcp.list_prompts()
 
     capabilities: Dict[str, Dict[str, bool]] = {}
     if tools:
